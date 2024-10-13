@@ -210,7 +210,7 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
             last <= last;
     end
 end
-// ======================= Stream-Out ===========
+// =============StreamOut===========
 always @(*) begin
     if (state == OUT) begin
         sm_tvalid = 1;
