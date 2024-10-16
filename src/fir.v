@@ -48,28 +48,17 @@ module fir
     input   wire                     axis_rst_n
 );
 // fir state 
-localparam IDLE = 12,
-           RST  = 13,
-           WAIT = 14,
-           SIN  = 15,
-           STOR = 16,
-           S0   = 0,
-           S1   = 1,
-           S2   = 2,
-           S3   = 3,
-           S4   = 4,
-           S5   = 5,
-           S6   = 6,
-           S7   = 7,
-           S8   = 8,
-           S9   = 9,
-           S10  = 10,
-           OUT  = 11;
-reg [4:0] state, state_n;
-reg signed [31:0] Yn, Xn, Hn;
+localparam IDLE = 0,
+           WAIT = 1,
+           IN   = 2,
+           COMP = 3,
+           OUT  = 4;
+reg [2:0] state, state_n;
+reg signed [31:0] Yn, Xn, Hn, Yn_n;
 reg [(pADDR_WIDTH-1):0] tap_wa, tap_ra, tap_a_r;
 reg last;
-
+reg [5:0] cnt11, rst_cnt;
+wire      cnt_en = (state == COMP && cnt11 != 11);
 //===========Block level signal(ap_hs)=============
 reg ap_start, ap_idle, ap_done;
 reg ap_start_n, ap_idle_n, ap_done_n;
@@ -77,9 +66,9 @@ reg [31:0] data_length; // parameterize ?
 
 // ap_start
 always@(*)begin
-    if (~&tap_wa && wready && wvalid && wdata == 32'h0000_0001) // host program ap_start 
-        ap_start_n = wdata; 
-    else if(state == SIN)
+    if (~&tap_wa && wready && wvalid && wdata == 32'h0000_0001 && state == IDLE && rst_cnt == 10) // host program ap_start 
+        ap_start_n = 1'b1; 
+    else if(state == IN)
         ap_start_n = 1'b0;
     else 
         ap_start_n = ap_start;
@@ -87,8 +76,9 @@ end
 
 //ap_idle 
 always@(*)begin
-    if (~&tap_wa && wready && wvalid && wdata == 32'h0000_0001) // host program ap_start
+    if (~&tap_wa && wready && wvalid && wdata == 32'h0000_0001 && state == IDLE && rst_cnt == 10) // host program ap_start
         ap_idle_n = 1'b0;
+    // else if(sm_tlast)
     else if(state == OUT && last) // reset ap_idle when last data transmitted out 
         ap_idle_n = 1'b1;
     else 
@@ -98,8 +88,9 @@ end
 //ap_done 
 always@(*)begin
     if(state == OUT && last)
+    // if(sm_tlast)
         ap_done_n = 1'b1;
-    else if(state == SIN)
+    else if(state == IN)
         ap_done_n = 1'b0;
     else    
         ap_done_n = ap_done;
@@ -193,7 +184,7 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
 end
 //==============StreamIn============
 always@(*)begin
-    if(state == SIN)
+    if(state == IN)
         ss_tready = 1;
     else 
         ss_tready = 0;
@@ -204,13 +195,13 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
     else begin
         if(state == IDLE) 
             last <= 0;
-        else if (state == SIN)
+        else if (state == IN)
             last <= ss_tlast;
         else 
             last <= last;
     end
 end
-// =============StreamOut===========
+// ======================= Stream-Out ===========
 always @(*) begin
     if (state == OUT) begin
         sm_tvalid = 1;
@@ -228,12 +219,13 @@ end
 
 //tap_A
 always@(*)begin
-    if (wready && wvalid)
+    if (wready && wvalid && state != COMP)
         tap_a_r = tap_wa;
     else if(axi_r_state == AXI_R_WAIT && ap_idle) 
-        tap_a_r = tap_ra; //not complete
+        tap_a_r = tap_ra;
     else                  
-        tap_a_r = (state_n << 2) + 12'h20; //offset = 'h20
+        tap_a_r = (cnt11 << 2) + 12'h20; //offset = 'h20
+
     tap_A = (12'h20 <= tap_a_r && tap_a_r <= 12'h48) ? tap_a_r - 12'h20 : 0;
 end
 
@@ -251,30 +243,26 @@ end
 
 //tap_EN
 always@(*)begin
-    tap_EN = ((wready && wvalid) || (rready && rvalid) || (S0 <= state_n && state_n <= S10));
+    // tap_EN = ((wready && wvalid) || (rready && rvalid) || (S0 <= state_n && state_n <= S10));
+    tap_EN = ((wready && wvalid) || (rready && rvalid) || (state_n == COMP));
 end
 
 //============dataRAM============
-// reg [3:0] data_WE_r;
-// reg       data_EN_r;
 reg [(pADDR_WIDTH-1):0] data_wa, data_wa_n, data_ra, data_ra_n;
-// reg [(pDATA_WIDTH-1):0] data_Di_r;
-reg [3:0] data_rst_cnt;
 
 //data_wa
 always@(*)begin
-    if(state == SIN)begin
+    if(state == IN)
         data_wa_n = (data_wa == 10) ? 0 : data_wa + 1;
-    end
     else
         data_wa_n = data_wa;
 end
 //data_ra
 always@(*)begin
-    if(state == SIN)begin
+    if(state == IN)begin
         data_ra_n = (data_wa == 10) ?  0 : data_wa + 1;
     end
-    else if(S0 <= state && state <= S10)begin
+    else if(state == COMP)begin
         data_ra_n = (data_ra == 10) ?  0 : data_ra + 1;
     end
     else    
@@ -285,12 +273,10 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
     if(!axis_rst_n)begin
         data_wa <= 0;
         data_ra <= 1;
-        data_rst_cnt <= 0;
     end
     else begin
         data_wa <= data_wa_n;
         data_ra <= data_ra_n;
-        data_rst_cnt <= (state_n != state) ? 0 : data_rst_cnt + 1;
     end
 end
 always@(*)begin
@@ -298,17 +284,17 @@ always@(*)begin
     data_A  = 0;
     data_Di = 0;
     data_EN = 1;
-    if(S0 <= state_n && state_n <= S10)begin
+    if(state == COMP)begin
         data_EN = 1;
-        data_A  = (data_ra_n << 2);
+        data_A  = (data_ra << 2);
     end
-    else if(state == RST)begin
+    else if(rst_cnt <= 10 && state == IDLE)begin
         data_EN = 1;
-        data_A  = (data_rst_cnt << 2);
+        data_A  = (rst_cnt << 2);
         data_WE = 4'hf;
         data_Di = 32'd0;
     end
-    else if(state == SIN)begin 
+    else if(state == IN)begin 
         data_EN = 1;
         data_A  = (data_wa << 2);
         data_WE = 4'hf;
@@ -324,33 +310,32 @@ always@(*)begin
     // end
 end
 
+always@(posedge axis_clk or negedge axis_rst_n)begin
+    if(!axis_rst_n)begin
+        cnt11 <= 0;
+        rst_cnt <= 0;
+    end
+    else begin
+        cnt11 <= cnt_en ? cnt11 + 1 : 0;
+        rst_cnt <= (rst_cnt == 10)? (state == OUT && state_n == IDLE) ? 0 : rst_cnt : rst_cnt + 1;
+    end
+end
 // fir fsm
 always@(*)begin
     case(state)
-        IDLE : state_n = (wready && wvalid && wdata == 1) ? RST : IDLE;
-        RST  : state_n = (data_rst_cnt == 4'd10) ? WAIT : RST;
-        WAIT : state_n = (ss_tvalid) ? SIN : WAIT;
-        SIN  : state_n = (ss_tready) ? STOR: SIN;
-        STOR : state_n = S0;
-        S0   : state_n = S1;
-        S1   : state_n = S2;
-        S2   : state_n = S3;
-        S3   : state_n = S4;
-        S4   : state_n = S5;
-        S5   : state_n = S6;
-        S6   : state_n = S7;
-        S7   : state_n = S8;
-        S8   : state_n = S9;
-        S9   : state_n = S10;
-        S10  : state_n = OUT;
+        IDLE : state_n = (wready && wvalid && wdata == 32'd1 && rst_cnt == 10) ? WAIT : IDLE;
+        WAIT : state_n = (ss_tvalid) ? IN : WAIT;    
+        IN   : state_n = (ss_tready) ? COMP: IN;     // 1T
+        COMP : state_n = (cnt11 == 11) ? OUT : COMP; // 13T
         OUT  : begin
             if (last)
                 state_n = IDLE;
-            else if(sm_tready)
-                state_n = WAIT;
+            else if(sm_tready && ss_tvalid)
+                state_n = IN;
             else 
                 state_n = OUT;
         end
+        default : state_n = IDLE;
     endcase
 end
 always@(posedge axis_clk or negedge axis_rst_n)begin
@@ -360,21 +345,22 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
         state <= state_n;
 end
 
-//===========Xn, Yn, Hn
+//===========Xn, Yn, Hn, Yn_n -> reslove Latch
 always@(*)begin
     Xn = data_Do;
     Hn = tap_Do;
+    Yn= Yn_n;
 end
 always@(posedge axis_clk or negedge axis_rst_n)begin
     if(!axis_rst_n)
-        Yn <= 0;
+        Yn_n <= 0;
     else begin
-        if(state == SIN)
-            Yn <= 0;
-        else if(S0 <= state_n && state_n <= S10)
-            Yn <= Yn + Xn * Hn;
+        if(state == IN)
+            Yn_n <= 0;
+        else if(state == COMP)
+            Yn_n <= Yn + Xn * Hn;
         else 
-            Yn <= Yn;
+            Yn_n <= Yn;
     end
 end
 
