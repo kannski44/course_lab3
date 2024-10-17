@@ -5,17 +5,17 @@ module fir
 )
 (
     //axi-lite write
-    output reg                      awready,    // address write ready
-    output reg                      wready,     // data    write ready
+    output wire                     awready,    // address write ready
+    output wire                     wready,     // data    write ready
     input  wire                     awvalid,    // address write valid
     input  wire                     wvalid,     // data    write valid
     input  wire [(pADDR_WIDTH-1):0] awaddr,     // address write data  => Write the Address of Coefficient
     input  wire [(pDATA_WIDTH-1):0] wdata,      // data    write data  => Write the Coefficient
     //axi-lite read
-    output reg                      arready,    // address read ready
+    output wire                     arready,    // address read ready
     input  wire                     rready,     // data    read ready
     input  wire                     arvalid,    // address read valid
-    output reg                      rvalid,     // data    read valid
+    output wire                     rvalid,     // data    read valid
     input  wire [(pADDR_WIDTH-1):0] araddr,     // address read data   => Send the Address of Coefficient to Read
     output reg  [(pDATA_WIDTH-1):0] rdata,      // data    read data   => Coefficient of that Address
     // AXI-stream
@@ -51,9 +51,9 @@ module fir
 localparam IDLE = 0,
            WAIT = 1,
            IN   = 2,
-           COMP = 3,
-           OUT  = 4;
-reg [2:0] state, state_n;
+           COMP = 3;
+        //    OUT  = 4;
+reg [1:0] state, state_n;
 reg signed [31:0] Yn, Xn, Hn, Yn_n;
 reg [(pADDR_WIDTH-1):0] tap_wa, tap_ra, tap_a_r;
 reg last;
@@ -79,7 +79,7 @@ always@(*)begin
     if (~&tap_wa && wready && wvalid && wdata == 32'h0000_0001 && state == IDLE && rst_cnt == 10) // host program ap_start
         ap_idle_n = 1'b0;
     // else if(sm_tlast)
-    else if(state == OUT && last) // reset ap_idle when last data transmitted out 
+    else if(cnt11 == 11 && state == COMP && last) // reset ap_idle when last data transmitted out 
         ap_idle_n = 1'b1;
     else 
         ap_idle_n = ap_idle;
@@ -87,7 +87,7 @@ end
 
 //ap_done 
 always@(*)begin
-    if(state == OUT && last)
+    if(cnt11 == 11 && state == COMP && last)
     // if(sm_tlast)
         ap_done_n = 1'b1;
     else if(state == IN)
@@ -112,11 +112,15 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
 end
 
 //===========axilite-read=============
-localparam AXI_R_IDLE = 0,
-           AXI_R_ADDR = 1,
-           AXI_R_WAIT = 2, 
-           AXI_R_DATA = 3;
-reg [1:0] axi_r_state, axi_r_state_n;
+// localparam AXI_R_IDLE = 0,
+//            AXI_R_ADDR = 1,
+//            AXI_R_WAIT = 2, 
+//            AXI_R_DATA = 3; 
+localparam AXI_R_IDLE = 3'b000,
+           AXI_R_ADDR = 3'b010,
+           AXI_R_WAIT = 3'b100, 
+           AXI_R_DATA = 3'b001 ; 
+reg [2:0] axi_r_state, axi_r_state_n;
 
 always@(*)begin
     case(axi_r_state)
@@ -127,17 +131,12 @@ always@(*)begin
         default : axi_r_state_n = AXI_R_IDLE;
     endcase
 end
+assign {arready, rvalid} = axi_r_state[1:0];
 always@(posedge axis_clk or negedge axis_rst_n)begin
-    if(!axis_rst_n)begin
+    if(!axis_rst_n)
         axi_r_state <= AXI_R_IDLE;
-        arready     <= 0;
-        rvalid      <= 0;
-    end
-    else begin
+    else 
         axi_r_state <= axi_r_state_n;
-        arready     <= (axi_r_state_n == AXI_R_ADDR);
-        rvalid      <= (axi_r_state_n == AXI_R_DATA);
-    end
 end
 always@(*)begin
     case(tap_ra)
@@ -149,9 +148,9 @@ end
 
 //==========axilite-write===========
 reg [1:0] axi_w_state, axi_w_state_n;
-localparam AXI_W_IDLE = 0,
-           AXI_W_ADDR = 1, 
-           AXI_W_DATA = 2;
+localparam AXI_W_IDLE = 2'b00,
+           AXI_W_ADDR = 2'b10, 
+           AXI_W_DATA = 2'b01;
 always@(*)begin
     case(axi_w_state)
         AXI_W_IDLE : axi_w_state_n = (awvalid) ? AXI_W_ADDR : AXI_W_IDLE;
@@ -160,18 +159,16 @@ always@(*)begin
         default : axi_w_state_n = AXI_W_IDLE;
     endcase
 end
+assign {awready, wready} = axi_w_state[1:0];
 always@(posedge axis_clk or negedge axis_rst_n)begin
-    if(!axis_rst_n)begin
+    if(!axis_rst_n)
         axi_w_state <= AXI_W_IDLE;
-        awready     <= 0;
-        wready      <= 0;
-    end
-    else begin
+    
+    else 
         axi_w_state <= axi_w_state_n;
-        awready     <= (axi_w_state_n == AXI_W_ADDR);
-        wready      <= (axi_w_state_n == AXI_W_DATA);
-    end
+    
 end
+
 always@(posedge axis_clk or negedge axis_rst_n)begin
     if(!axis_rst_n)begin
         tap_wa <= 0;
@@ -203,7 +200,7 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
 end
 // ======================= Stream-Out ===========
 always @(*) begin
-    if (state == OUT) begin
+    if (cnt11 == 11 && state == COMP) begin
         sm_tvalid = 1;
         sm_tdata = Yn;
         sm_tlast = last;
@@ -316,8 +313,8 @@ always@(posedge axis_clk or negedge axis_rst_n)begin
         rst_cnt <= 0;
     end
     else begin
-        cnt11 <= cnt_en ? cnt11 + 1 : 0;
-        rst_cnt <= (rst_cnt == 10)? (state == OUT && state_n == IDLE) ? 0 : rst_cnt : rst_cnt + 1;
+        cnt11 <= (cnt11 == 11) ? ((state == COMP && (state_n == IDLE||state_n == IN)) ? 0 : cnt11) : state == COMP ? cnt11 + 1: cnt11;
+        rst_cnt <= (rst_cnt == 10)? (state == COMP && state_n == IDLE) ? 0 : rst_cnt : rst_cnt + 1;
     end
 end
 // fir fsm
@@ -326,15 +323,28 @@ always@(*)begin
         IDLE : state_n = (wready && wvalid && wdata == 32'd1 && rst_cnt == 10) ? WAIT : IDLE;
         WAIT : state_n = (ss_tvalid) ? IN : WAIT;    
         IN   : state_n = (ss_tready) ? COMP: IN;     // 1T
-        COMP : state_n = (cnt11 == 11) ? OUT : COMP; // 13T
-        OUT  : begin
-            if (last)
-                state_n = IDLE;
-            else if(sm_tready && ss_tvalid)
-                state_n = IN;
-            else 
-                state_n = OUT;
+        COMP : begin
+            // state_n = (cnt11 == 11) ? OUT : COMP; // 13T
+            if(cnt11 == 11)begin
+                if(last)
+                    state_n = IDLE;
+                else if(sm_tready && ss_tvalid)
+                    state_n = IN;
+                else   
+                    state_n = COMP;
+            end
+            else begin
+                state_n = COMP;
+            end
         end
+        // OUT  : begin
+        //     if (last)
+        //         state_n = IDLE;
+        //     else if(sm_tready && ss_tvalid)
+        //         state_n = IN;
+        //     else 
+        //         state_n = OUT;
+        // end
         default : state_n = IDLE;
     endcase
 end
