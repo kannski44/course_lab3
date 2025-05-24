@@ -38,7 +38,7 @@ jobs:
         run: python3 gen_candf.py
 
       - name: Upload generated headers
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-pages-artifact@v3
         with:
           name: riscv-candidates
           path: |
