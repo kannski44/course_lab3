@@ -35,7 +35,7 @@ jobs:
           pip install pandas numpy scipy scikit-learn joblib
 
       - name: Generate headers
-        run: python3 gen_candidates_from_csv.py
+        run: python3 gen_candf.py
 
       - name: Upload generated headers
         uses: actions/upload-artifact@v3
