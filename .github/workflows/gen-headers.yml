@@ -1,0 +1,46 @@
+name: Generate RISC-V Candidates
+
+# 手动触发或当相关文件变化时自动跑
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'rescheduling_dataset_large_*.csv'
+      - 'vectorizer_augmented.joblib'
+      - 'gen_candidates_from_csv.py'
+
+jobs:
+  build-and-generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install RISC-V GNU toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils-riscv64-unknown-elf \
+            gcc-riscv64-unknown-elf
+
+      - name: Setup Python 3.8
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scipy scikit-learn joblib
+
+      - name: Generate headers
+        run: python3 gen_candidates_from_csv.py
+
+      - name: Upload generated headers
+        uses: actions/upload-artifact@v3
+        with:
+          name: riscv-candidates
+          path: |
+            candidates.h
+            cand_feat.h
