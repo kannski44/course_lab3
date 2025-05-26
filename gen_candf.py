@@ -57,17 +57,32 @@ def make_asm(seq, idx):
     return "\n".join(lines)
 
 def assemble_and_extract(idx):
+    """ 汇编 cand{idx}.s -> cand{idx}.o -> cand{idx}.bin """
     s_path = TMP_DIR/f"cand{idx}.s"
     o_path = TMP_DIR/f"cand{idx}.o"
     b_path = TMP_DIR/f"cand{idx}.bin"
+
+    # 1) 汇编
     subprocess.run([RISCV_AS, "-march=rv32im", "-mabi=ilp32",
                     "-o", str(o_path), str(s_path)], check=True)
+    # 2) 提取裸二进制 text 段
     subprocess.run([RISCV_OBJCOPY,
                     "-O", "binary",
                     "--only-section", ".text",
                     str(o_path), str(b_path)], check=True)
+
     data = b_path.read_bytes()
-    return data[:N_INST*4].ljust(N_INST*4, b'\x00')
+    # 3) 截断到 N_INST*4 字节
+    data = data[: N_INST*4]
+
+    # 4) 如果不够，就用 RISC-V NOP(0x00000013)填充
+    instr_bytes = bytearray(data)
+    nop = (0x00000013).to_bytes(4, 'little')
+    while len(instr_bytes) < N_INST*4:
+        instr_bytes += nop
+
+    return bytes(instr_bytes)
+
 
 def main():
     TMP_DIR.mkdir(exist_ok=True)
