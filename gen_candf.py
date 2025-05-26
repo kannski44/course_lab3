@@ -13,15 +13,15 @@ except ImportError:
     Interpreter = tf.lite.Interpreter
 
 # -------- 配置 --------
-#CSV_FILE        = "rescheduling_dataset_large_10000.csv"
-CSV_FILE        = "rescheduling_dataset_150.csv"
+CSV_FILE        = "rescheduling_dataset_large_10000.csv"
+#CSV_FILE        = "rescheduling_dataset_150.csv"
 VECT_FILE       = "vectorizer_augmented.joblib"
 TFLITE_FILE     = "rescheduler_int8.tflite"
 OUT_FEAT_H      = Path("cand_feat.h")
 OUT_CAND_H      = Path("candidates.h")
 TMP_DIR         = Path("cand_temp")
 N_CAND          = 10
-N_INST          = 150
+N_INST          = 100
 RISCV_AS        = "riscv64-unknown-elf-as"
 RISCV_OBJCOPY   = "riscv64-unknown-elf-objcopy"
 
