@@ -44,3 +44,4 @@ jobs:
           path: |
             candidates.h
             cand_feat.h
+            initial_instr.h
