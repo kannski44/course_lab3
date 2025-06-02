@@ -13,8 +13,8 @@ except ImportError:
     Interpreter = tf.lite.Interpreter
 
 # -------- 配置 --------
-CSV_FILE        = "rescheduling_dataset_large_10000.csv"
-VECT_FILE       = "vectorizer_augmented.joblib"
+CSV_FILE        = "rescheduling_dataset_rich.csv"
+VECT_FILE       = "vectorizer.joblib"
 TFLITE_FILE     = "rescheduler_int8.tflite"
 
 OUT_CAND_H      = Path("candidates.h")
